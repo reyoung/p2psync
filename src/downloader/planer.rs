@@ -119,10 +119,7 @@ impl Planer {
 
             new_peers.push(String::from(peer));
 
-            while let Some((peer, other_tree)) = tree_and_peer.pop() {
-                if tree != other_tree {
-                    return Err(format!("tree mismatch: {:?} != {:?}", tree, other_tree).into());
-                }
+            while let Some((peer, _)) = tree_and_peer.pop() {
                 new_peers.push(String::from(peer))
             }
 
