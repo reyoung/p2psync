@@ -1,4 +1,4 @@
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{downloader::planer::Action, utils};
 use std::{collections::VecDeque, io, path::Path};
@@ -24,8 +24,24 @@ impl<'a> Iterator for DownloadURLs<'a> {
     }
 }
 
-async fn download_and_check(_url: &str, _md5: &str, _file_path: &Path) -> io::Result<()> {
-    Ok(())
+async fn download_and_check(
+    url: &str,
+    md5: &str,
+    file_path: &Path,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+    let mut resp = reqwest::get(url).await?;
+    let mut output_file = fs::File::create(file_path).await?;
+    let mut md5_context = md5::Context::new();
+    while let Some(chunk) = resp.chunk().await? {
+        output_file.write_all(&chunk).await?;
+        md5_context.consume(&chunk);
+    }
+
+    if md5 != format!("{:x}", md5_context.compute()) {
+        Err("md5 mismatch".into())
+    } else {
+        Ok(())
+    }
 }
 
 async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
