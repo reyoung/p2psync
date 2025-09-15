@@ -38,7 +38,7 @@ async fn download_and_check(
     let mut md5_context = md5::Context::new();
 
     // Use larger buffer for better performance
-    const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
+    const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
     let mut buffer = Vec::with_capacity(BUFFER_SIZE);
 
     while let Some(chunk) = resp.chunk().await? {
