@@ -8,7 +8,7 @@ use crate::tracker::PeersResponse;
 use crate::utils::multierr::MultiError;
 use reqwest;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Action {
     Download {
         peers: Arc<RwLock<Vec<String>>>,

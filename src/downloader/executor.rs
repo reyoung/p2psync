@@ -1,6 +1,6 @@
 use tokio::{fs, io::AsyncWriteExt};
 
-use crate::{downloader::planer::Action, utils};
+use crate::downloader::planer::Action;
 use std::{collections::VecDeque, io, path::Path};
 
 struct DownloadURLs<'a> {
@@ -81,7 +81,8 @@ async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error 
                 }
             }
 
-            return Err(Box::new(utils::multierr::MultiError::new(errs)));
+            let error_msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            return Err(format!("All download attempts failed: {}", error_msgs.join("; ")).into());
         }
         Action::MakeDir { path } => fs::create_dir_all(path).await?,
     })
@@ -115,7 +116,8 @@ pub async fn execute_actions(
     }
 
     if !errs.is_empty() {
-        return Err(Box::new(utils::multierr::MultiError::new(errs)));
+        let error_msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        return Err(format!("Some tasks failed: {}", error_msgs.join("; ")).into());
     }
 
     Ok(())
