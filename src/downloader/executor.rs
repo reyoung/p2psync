@@ -1,6 +1,7 @@
 use tokio::{fs, io::AsyncWriteExt};
 
 use crate::downloader::planer::Action;
+use std::sync::{Arc, Mutex};
 use std::{collections::VecDeque, io, path::Path};
 
 struct DownloadURLs<'a> {
@@ -28,13 +29,17 @@ async fn download_and_check(
     url: &str,
     md5: &str,
     file_path: &Path,
+    pbar: Arc<Mutex<tqdm::Tqdm<()>>>,
 ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     let mut resp = reqwest::get(url).await?;
     let mut output_file = fs::File::create(file_path).await?;
     let mut md5_context = md5::Context::new();
+
     while let Some(chunk) = resp.chunk().await? {
         output_file.write_all(&chunk).await?;
         md5_context.consume(&chunk);
+
+        pbar.lock().unwrap().update(chunk.len())?;
     }
 
     if md5 != format!("{:x}", md5_context.compute()) {
@@ -44,13 +49,17 @@ async fn download_and_check(
     }
 }
 
-async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+async fn execute_action(
+    action: Action,
+    pbar: Arc<Mutex<tqdm::Tqdm<()>>>,
+) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     Ok(match action {
         Action::Download {
             peers,
             peer_id,
             path: file_path,
             md5,
+            size,
         } => {
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent).await?;
@@ -67,13 +76,15 @@ async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error 
             let urls = DownloadURLs {
                 md5: &md5,
                 peers: &peers_vec,
-                peer_id: peer_id,
+                peer_id,
                 cur: 0,
             };
 
             let mut errs = Vec::new();
             for url in urls {
-                match download_and_check(url.as_str(), &md5, file_path.as_path()).await {
+                match download_and_check(url.as_str(), &md5, file_path.as_path(), pbar.clone())
+                    .await
+                {
                     Ok(()) => {
                         return Ok(());
                     }
@@ -88,14 +99,29 @@ async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error 
     })
 }
 
+fn total_size(actions: &Vec<Action>) -> usize {
+    let mut total_size = 0;
+    for action in actions {
+        match action {
+            Action::Download { size, .. } => total_size += size,
+            Action::MakeDir { .. } => {}
+        }
+    }
+    total_size
+}
+
 pub async fn execute_actions(
     actions: &Vec<Action>,
     concurrency: usize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = VecDeque::new();
     let mut errs = Vec::new();
+
+    let tqdm = Arc::new(Mutex::new(
+        tqdm::pbar(Some(total_size(actions))).desc(Some("download")),
+    ));
     for action in actions {
-        handles.push_back(tokio::spawn(execute_action(action.clone())));
+        handles.push_back(tokio::spawn(execute_action(action.clone(), tqdm.clone())));
 
         if handles.len() > concurrency {
             let handle = handles.pop_front().unwrap();

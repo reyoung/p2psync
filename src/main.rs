@@ -90,7 +90,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             concurrency,
             tracker,
         }) => {
-            download(md5, concurrency, tracker).await?;
+            if let Err(err) = download(md5, concurrency, tracker).await {
+                eprintln!("download: {}", err);
+                panic!("download failed");
+            }
         }
 
         None => {

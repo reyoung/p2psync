@@ -8,13 +8,13 @@ pub struct HeartBeater {
 }
 
 impl HeartBeater {
-    pub fn new(self_url: &str, trackers: Vec<String>, interval: Duration) -> Box<Self> {
+    pub fn new(self_url: String, trackers: Vec<String>, interval: Duration) -> Box<Self> {
         let client = Arc::new(reqwest::Client::new());
 
         Box::new(HeartBeater {
             handles: trackers
                 .iter()
-                .map(|url| (url.clone(), client.clone(), String::from(self_url)))
+                .map(|url| (url.clone(), client.clone(), self_url.clone()))
                 .map(move |(mut url, client, self_url)| {
                     tokio::spawn(async move {
                         url.push_str("/announce");
@@ -24,7 +24,7 @@ impl HeartBeater {
                             };
 
                             if let Err(err) = client.post(url.as_str()).json(&req).send().await {
-                                eprintln!("Failed to send heartbeat: {}", err);
+                                eprintln!("Failed to send heartbeat: {:?}", err);
                             }
 
                             tokio::time::sleep(interval).await;

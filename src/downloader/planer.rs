@@ -14,6 +14,7 @@ pub enum Action {
         peer_id: usize,
         path: PathBuf,
         md5: String,
+        size: usize,
     },
     MakeDir {
         path: PathBuf,
@@ -40,14 +41,16 @@ impl Planer {
                 .map(|url| reqwest::get(format!("{}/peers", url)))
             {
                 match result.await {
-                    Ok(responses) => match responses.json::<PeersResponse>().await {
-                        Ok(peers_response) => {
-                            for addr in peers_response.peers.iter().map(|p| p.addr.clone()) {
-                                peers_set.insert(addr);
+                    Ok(responses) => {
+                        match responses.error_for_status()?.json::<PeersResponse>().await {
+                            Ok(peers_response) => {
+                                for addr in peers_response.peers.iter().map(|p| p.addr.clone()) {
+                                    peers_set.insert(addr);
+                                }
                             }
+                            Err(err) => errs.push(err),
                         }
-                        Err(err) => errs.push(err),
-                    },
+                    }
                     Err(err) => {
                         errs.push(err);
                     }
@@ -59,7 +62,7 @@ impl Planer {
                 } else {
                     return Err(errs
                         .iter()
-                        .map(|e| format!("{}", e))
+                        .map(|e| format!("internal errors: {}", e))
                         .collect::<Vec<_>>()
                         .join("; ")
                         .into());
@@ -81,14 +84,16 @@ impl Planer {
                 )
             }) {
                 match result.await {
-                    Ok(response) => match response.json::<LookupDirOrFile>().await {
-                        Ok(tree) => {
-                            tree_and_peer.push((peer, tree));
+                    Ok(response) => {
+                        match response.error_for_status()?.json::<LookupDirOrFile>().await {
+                            Ok(tree) => {
+                                tree_and_peer.push((peer, tree));
+                            }
+                            Err(err) => {
+                                errs.push(err);
+                            }
                         }
-                        Err(err) => {
-                            errs.push(err);
-                        }
-                    },
+                    }
                     Err(err) => {
                         errs.push(err);
                     }
@@ -150,7 +155,7 @@ impl Planer {
                             frontier.push_back((cur_path.clone(), &child));
                         }
                     }
-                    LookupDirOrFile::File { name, md5 } => {
+                    LookupDirOrFile::File { name, md5, size } => {
                         let cur_path = prefix.join(name);
 
                         result.push(Action::Download {
@@ -158,6 +163,7 @@ impl Planer {
                             peer_id: next_id,
                             path: cur_path,
                             md5: md5.clone(),
+                            size: size.clone(),
                         });
 
                         next_id += 1;
@@ -210,6 +216,7 @@ mod tests {
             "test_file_md5" => Json(LookupDirOrFile::File {
                 name: "test.txt".to_string(),
                 md5: "test_file_md5".to_string(),
+                size: 100,
             }),
             "test_dir_md5" => Json(LookupDirOrFile::Dir {
                 name: "test_dir".to_string(),
@@ -217,10 +224,12 @@ mod tests {
                     LookupDirOrFile::File {
                         name: "file1.txt".to_string(),
                         md5: "file1_md5".to_string(),
+                        size: 100,
                     },
                     LookupDirOrFile::File {
                         name: "file2.txt".to_string(),
                         md5: "file2_md5".to_string(),
+                        size: 100,
                     },
                 ],
             }),
@@ -232,17 +241,20 @@ mod tests {
                         children: vec![LookupDirOrFile::File {
                             name: "nested.txt".to_string(),
                             md5: "nested_file_md5".to_string(),
+                            size: 100,
                         }],
                     },
                     LookupDirOrFile::File {
                         name: "root_file.txt".to_string(),
                         md5: "root_file_md5".to_string(),
+                        size: 100,
                     },
                 ],
             }),
             _ => Json(LookupDirOrFile::File {
                 name: "default.txt".to_string(),
                 md5: "default_md5".to_string(),
+                size: 100,
             }),
         }
     }
@@ -254,6 +266,7 @@ mod tests {
         Json(LookupDirOrFile::File {
             name: "different.txt".to_string(),
             md5: "different_md5".to_string(),
+            size: 100,
         })
     }
 

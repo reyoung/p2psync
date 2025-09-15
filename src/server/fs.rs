@@ -31,6 +31,7 @@ pub enum LookupDirOrFile {
     File {
         name: String,
         md5: String,
+        size: usize,
     },
 }
 
@@ -51,12 +52,14 @@ impl PartialEq for LookupDirOrFile {
                 LookupDirOrFile::File {
                     name: name1,
                     md5: md51,
+                    size: size1,
                 },
                 LookupDirOrFile::File {
                     name: name2,
                     md5: md52,
+                    size: size2,
                 },
-            ) => name1 == name2 && md51 == md52,
+            ) => name1 == name2 && md51 == md52 && size1 == size2,
             _ => false,
         }
     }
@@ -122,9 +125,10 @@ impl VirtualFileSystem {
                     children: dir_children,
                 }
             }
-            SpecialField::File { .. } => LookupDirOrFile::File {
+            SpecialField::File { size } => LookupDirOrFile::File {
                 name: self.file_name(id),
                 md5: self.items[id].md5.clone(),
+                size: size.clone(),
             },
         }
     }
