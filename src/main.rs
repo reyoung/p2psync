@@ -6,6 +6,9 @@ use tracker::TrackerServer;
 mod server;
 use server::{CreateArgs, startup};
 
+mod downloader;
+use downloader::download;
+
 #[derive(Parser)]
 #[command(name = "p2psync")]
 #[command(about = "A peer-to-peer file synchronization tool")]
@@ -32,6 +35,14 @@ enum Commands {
         dump_path: Option<String>,
         #[arg(short, long, help = "load binary")]
         load_path: Option<String>,
+        #[arg(short, long, help = "tracker address")]
+        tracker: Vec<String>,
+    },
+    Download {
+        #[arg(short, long, help = "md5")]
+        md5: String,
+        #[arg(short, long, help = "concurrency", default_value_t = 10)]
+        concurrency: usize,
         #[arg(short, long, help = "tracker address")]
         tracker: Vec<String>,
     },
@@ -72,6 +83,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 tracker,
             )
             .await?;
+        }
+
+        Some(Commands::Download {
+            md5,
+            concurrency,
+            tracker,
+        }) => {
+            download(md5, concurrency, tracker).await?;
         }
 
         None => {

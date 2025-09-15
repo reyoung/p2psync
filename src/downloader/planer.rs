@@ -5,7 +5,6 @@ use std::{collections::HashSet, error::Error};
 
 use crate::server::LookupDirOrFile;
 use crate::tracker::PeersResponse;
-use crate::utils::multierr::MultiError;
 use reqwest;
 
 #[derive(Debug, Clone)]
@@ -30,7 +29,7 @@ impl Planer {
         Planer { tracker_urls }
     }
 
-    pub async fn plan(&self, md5: &str) -> Result<Vec<Action>, Box<dyn Error>> {
+    pub async fn plan(&self, md5: &str) -> Result<Vec<Action>, Box<dyn Error + Sync + Send>> {
         let peers = {
             let mut peers_set = HashSet::new();
 
@@ -58,7 +57,12 @@ impl Planer {
                 if errs.is_empty() {
                     return Err("tracker_urls is empty".into());
                 } else {
-                    return Err(Box::new(MultiError::new(errs)));
+                    return Err(errs
+                        .iter()
+                        .map(|e| format!("{}", e))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                        .into());
                 }
             }
 
@@ -95,7 +99,12 @@ impl Planer {
                 return if errs.len() == 0 {
                     Err("no peers found".into())
                 } else {
-                    Err(Box::new(MultiError::new(errs)))
+                    Err(errs
+                        .iter()
+                        .map(|e| format!("{}", e))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                        .into())
                 };
             }
 
