@@ -126,7 +126,7 @@ async fn download(
         }
     };
 
-    let stream = ReaderStream::new(file);
+    let stream = ReaderStream::with_capacity(file, 4 * 1024 * 1024);
     let body = Body::from_stream(stream);
     body.into_response()
 }
@@ -165,8 +165,8 @@ pub async fn startup(
     let addr = format!("{}:{}", address, port);
     let listener = TcpListener::bind(&addr).await?;
 
-    let heart_beater = HeartBeater::new(
-        format!("http://{}", addr), tracker, Duration::from_secs(30));
+    let heart_beater =
+        HeartBeater::new(format!("http://{}", addr), tracker, Duration::from_secs(30));
 
     println!("Listening on http://{}", addr);
 
