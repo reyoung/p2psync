@@ -1,7 +1,7 @@
 use tokio::fs;
 
 use crate::{downloader::planer::Action, utils};
-use std::{io, path::Path};
+use std::{collections::VecDeque, io, path::Path};
 
 struct DownloadURLs<'a> {
     md5: &'a str,
@@ -24,13 +24,11 @@ impl<'a> Iterator for DownloadURLs<'a> {
     }
 }
 
-async fn download_and_check(url: &str, md5: &str, file_path: &Path) -> io::Result<()> {
+async fn download_and_check(_url: &str, _md5: &str, _file_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-async fn execute_action<'a>(
-    action: &'a Action,
-) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+async fn execute_action(action: Action) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
     Ok(match action {
         Action::Download {
             peers,
@@ -41,20 +39,25 @@ async fn execute_action<'a>(
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent).await?;
             }
-            let peers_read_guard = peers
-                .read()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+
+            // Extract peers data before async operations
+            let peers_vec = {
+                let peers_read_guard = peers
+                    .read()
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+                peers_read_guard.clone()
+            };
 
             let urls = DownloadURLs {
-                md5: md5,
-                peers: peers_read_guard.as_ref(),
-                peer_id: peer_id.clone(),
+                md5: &md5,
+                peers: &peers_vec,
+                peer_id: peer_id,
                 cur: 0,
             };
 
             let mut errs = Vec::new();
             for url in urls {
-                match download_and_check(url.as_str(), md5, file_path.as_path()).await {
+                match download_and_check(url.as_str(), &md5, file_path.as_path()).await {
                     Ok(()) => {
                         return Ok(());
                     }
@@ -68,21 +71,35 @@ async fn execute_action<'a>(
     })
 }
 
-pub async fn execute_actions<'a>(
-    actions: &'a Vec<Action>,
+pub async fn execute_actions(
+    actions: &Vec<Action>,
     concurrency: usize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let spawner = utils::limited_spawner::LimitedSpawner::new(concurrency);
-    let mut handles = Vec::new();
-    for i in 0..actions.len() {
-        let handle = spawner
-            .spawn(async move { execute_action(&actions[i]).await })
-            .await?;
-        handles.push(handle);
+    let mut handles = VecDeque::new();
+    let mut errs = Vec::new();
+    for action in actions {
+        handles.push_back(tokio::spawn(execute_action(action.clone())));
+
+        if handles.len() > concurrency {
+            let handle = handles.pop_front().unwrap();
+            if let Err(err) = handle.await {
+                errs.push(err);
+            }
+        }
+
+        if !errs.is_empty() {
+            break;
+        }
     }
 
-    for handle in handles {
-        handle.await?;
+    while let Some(handle) = handles.pop_front() {
+        if let Err(err) = handle.await {
+            errs.push(err);
+        }
+    }
+
+    if !errs.is_empty() {
+        return Err(Box::new(utils::multierr::MultiError::new(errs)));
     }
 
     Ok(())
