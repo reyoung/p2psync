@@ -1,11 +1,11 @@
+use crate::server::LookupDirOrFile;
+use crate::tracker::PeersResponse;
+use futures::TryFutureExt;
+use reqwest;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{collections::HashSet, error::Error};
-
-use crate::server::LookupDirOrFile;
-use crate::tracker::PeersResponse;
-use reqwest;
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -40,18 +40,15 @@ impl Planer {
                 .iter()
                 .map(|url| reqwest::get(format!("{}/peers", url)))
             {
-                match result.await {
-                    Ok(responses) => match responses.error_for_status() {
-                        Ok(responses) => match responses.json::<PeersResponse>().await {
-                            Ok(peers_response) => {
-                                for addr in peers_response.peers.iter().map(|p| p.addr.clone()) {
-                                    peers_set.insert(addr);
-                                }
-                            }
-                            Err(err) => errs.push(err),
-                        },
-                        Err(err) => errs.push(err),
-                    },
+                match result
+                    .and_then(async |r| r.error_for_status()?.json::<PeersResponse>().await)
+                    .await
+                {
+                    Ok(peers_response) => {
+                        for addr in peers_response.peers.iter().map(|p| p.addr.clone()) {
+                            peers_set.insert(addr);
+                        }
+                    }
                     Err(err) => {
                         errs.push(err);
                     }
@@ -84,20 +81,13 @@ impl Planer {
                     reqwest::get(format!("{}/query?md5={}", peer.as_str(), md5)),
                 )
             }) {
-                match result.await {
-                    Ok(response) => match response.error_for_status() {
-                        Ok(response) => match response.json::<LookupDirOrFile>().await {
-                            Ok(tree) => {
-                                tree_and_peer.push((peer, tree));
-                            }
-                            Err(err) => {
-                                errs.push(err);
-                            }
-                        },
-                        Err(err) => {
-                            errs.push(err);
-                        }
-                    },
+                match result
+                    .and_then(async |r| r.error_for_status()?.json::<LookupDirOrFile>().await)
+                    .await
+                {
+                    Ok(tree) => {
+                        tree_and_peer.push((peer, tree));
+                    }
                     Err(err) => {
                         errs.push(err);
                     }
