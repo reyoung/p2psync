@@ -41,16 +41,17 @@ impl Planer {
                 .map(|url| reqwest::get(format!("{}/peers", url)))
             {
                 match result.await {
-                    Ok(responses) => {
-                        match responses.error_for_status()?.json::<PeersResponse>().await {
+                    Ok(responses) => match responses.error_for_status() {
+                        Ok(responses) => match responses.json::<PeersResponse>().await {
                             Ok(peers_response) => {
                                 for addr in peers_response.peers.iter().map(|p| p.addr.clone()) {
                                     peers_set.insert(addr);
                                 }
                             }
                             Err(err) => errs.push(err),
-                        }
-                    }
+                        },
+                        Err(err) => errs.push(err),
+                    },
                     Err(err) => {
                         errs.push(err);
                     }
@@ -84,16 +85,19 @@ impl Planer {
                 )
             }) {
                 match result.await {
-                    Ok(response) => {
-                        match response.error_for_status()?.json::<LookupDirOrFile>().await {
+                    Ok(response) => match response.error_for_status() {
+                        Ok(response) => match response.json::<LookupDirOrFile>().await {
                             Ok(tree) => {
                                 tree_and_peer.push((peer, tree));
                             }
                             Err(err) => {
                                 errs.push(err);
                             }
+                        },
+                        Err(err) => {
+                            errs.push(err);
                         }
-                    }
+                    },
                     Err(err) => {
                         errs.push(err);
                     }
